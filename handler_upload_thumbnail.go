@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/base64"
 	"fmt"
 	"io"
 	"net/http"
@@ -46,6 +47,11 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 		respondWithError(w, http.StatusInternalServerError, "Error reading the file", err)
 		return
 	}
+
+	// We convert the thumbnail image to base64 and create a data url with it
+	convertedContent := base64.StdEncoding.EncodeToString(filecontent)
+	dataURL := fmt.Sprint("data:", filetype, ";base64,", convertedContent)
+
 	metadata, err := cfg.db.GetVideo(videoID)
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, "Couldn't fetch video data from the database", err)
@@ -55,13 +61,7 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	tb := thumbnail{
-		data:      filecontent,
-		mediaType: filetype,
-	}
-	videoThumbnails[videoID] = tb
-	tbURL := fmt.Sprintf("http://localhost:8091/api/thumbnails/%s", videoID.String())
-	metadata.ThumbnailURL = &tbURL
+	metadata.ThumbnailURL = &dataURL
 
 	err = cfg.db.UpdateVideo(metadata)
 	if err != nil {
