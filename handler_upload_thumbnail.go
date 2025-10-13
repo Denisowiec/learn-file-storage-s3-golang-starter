@@ -1,10 +1,15 @@
 package main
 
 import (
+	"crypto/rand"
 	"encoding/base64"
 	"fmt"
 	"io"
+	"mime"
 	"net/http"
+	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/bootdotdev/learn-file-storage-s3-golang-starter/internal/auth"
 	"github.com/google/uuid"
@@ -41,16 +46,34 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 	}
 	defer file.Close()
 
-	filetype := header.Header["Content-Type"][0]
-	filecontent, err := io.ReadAll(file)
+	filetype, _, err := mime.ParseMediaType(header.Header["Content-Type"][0])
 	if err != nil {
-		respondWithError(w, http.StatusInternalServerError, "Error reading the file", err)
+		respondWithError(w, http.StatusInternalServerError, "Error parsing media information", err)
+		return
+	}
+	if filetype != "image/png" && filetype != "image/jpeg" {
+		respondWithError(w, http.StatusBadRequest, "Wrong file type. Only png and jpeg files allowed", err)
 		return
 	}
 
-	// We convert the thumbnail image to base64 and create a data url with it
-	convertedContent := base64.StdEncoding.EncodeToString(filecontent)
-	dataURL := fmt.Sprint("data:", filetype, ";base64,", convertedContent)
+	// We save the thumbnail file on disk
+	ext := strings.TrimPrefix(filetype, "image/")
+	randomBytes := make([]byte, 32)
+	rand.Read(randomBytes)
+	randomName := base64.RawURLEncoding.EncodeToString(randomBytes)
+
+	fname := fmt.Sprint(string(randomName), ".", ext)
+	fpath := filepath.Join(cfg.assetsRoot, fname)
+	tbfile, err := os.Create(fpath)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Unable to save the file", err)
+		return
+	}
+	defer tbfile.Close()
+
+	if _, err = io.Copy(tbfile, file); err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Unable to save the thumbnail file", err)
+	}
 
 	metadata, err := cfg.db.GetVideo(videoID)
 	if err != nil {
@@ -61,7 +84,8 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	metadata.ThumbnailURL = &dataURL
+	tbURL := fmt.Sprint("http://localhost:8091/assets/", fname)
+	metadata.ThumbnailURL = &tbURL
 
 	err = cfg.db.UpdateVideo(metadata)
 	if err != nil {
