@@ -109,12 +109,6 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 	defer processedFile.Close()
 	defer os.Remove(processedFile.Name())
 
-	/*_, err = tmpFile.Seek(0, io.SeekStart)
-	if err != nil {
-		respondWithError(w, http.StatusInternalServerError, "Unable to reset file pointer", err)
-		return
-	}*/
-
 	aspectRatio, err := getVideoAspectRatio(processedFile.Name())
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, "Unable to check the aspect ratio of video", err)
@@ -149,12 +143,20 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	vidURL := fmt.Sprint("https://", cfg.s3Bucket, ".s3.", cfg.s3Region, ".amazonaws.com/", fname)
+	//vidURL := fmt.Sprint("https://", cfg.s3Bucket, ".s3.", cfg.s3Region, ".amazonaws.com/", fname)
+	// We generate a url to the video, and also add in the bucket name and key to it
+	vidURL := fmt.Sprint(cfg.s3Bucket, ",", fname)
 	vidMetadata.VideoURL = &vidURL
 	if err = cfg.db.UpdateVideo(vidMetadata); err != nil {
 		respondWithError(w, http.StatusInternalServerError, "Unable to upload vid", err)
 		return
 	}
+	// The video url gets switched out for a presigned one, only for the respond payload
+	newVid, err := cfg.dbVideoToSignedVideo(vidMetadata)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Error generating a presinged url", err)
+		return
+	}
 
-	respondWithJSON(w, http.StatusOK, vidMetadata)
+	respondWithJSON(w, http.StatusOK, newVid)
 }
