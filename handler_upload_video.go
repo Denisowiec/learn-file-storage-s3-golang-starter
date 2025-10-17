@@ -145,18 +145,14 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 
 	//vidURL := fmt.Sprint("https://", cfg.s3Bucket, ".s3.", cfg.s3Region, ".amazonaws.com/", fname)
 	// We generate a url to the video, and also add in the bucket name and key to it
-	vidURL := fmt.Sprint(cfg.s3Bucket, ",", fname)
+	//vidURL := fmt.Sprint(cfg.s3Bucket, ",", fname)
+	// Now we use CloudFront to distribute the content
+	vidURL := fmt.Sprint("https://", cfg.s3CfDistribution, "/", fname)
 	vidMetadata.VideoURL = &vidURL
 	if err = cfg.db.UpdateVideo(vidMetadata); err != nil {
 		respondWithError(w, http.StatusInternalServerError, "Unable to upload vid", err)
 		return
 	}
-	// The video url gets switched out for a presigned one, only for the respond payload
-	newVid, err := cfg.dbVideoToSignedVideo(vidMetadata)
-	if err != nil {
-		respondWithError(w, http.StatusInternalServerError, "Error generating a presinged url", err)
-		return
-	}
 
-	respondWithJSON(w, http.StatusOK, newVid)
+	respondWithJSON(w, http.StatusOK, vidMetadata)
 }
